@@ -28,8 +28,10 @@ export const welcomeLateS = 3;
 export const muteTailS = 0.4;
 export const gapS = 0.4;
 export const questionsQuietEndS = 25;
-export const wrapUpSilence = 3;
-export const wrapUpCountdown = 2;
+// 0.39 Going quiet on the last slide is only the fallback (n8n hears "that's all from me" or a thank-you at a pause), so a pause to
+// think doesn't end the pitch
+export const wrapUpSilence = 8;
+export const wrapUpCountdown = 3;
 // 0.34 A raised hand ignored for this much of the presenter's speech cuts in at their next breath (the level down this long)
 export const cutInAfterS = 6;
 export const breathS = 0.2;
