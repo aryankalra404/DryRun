@@ -983,7 +983,7 @@ if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome'
 // opens the floor with the line voiced ahead of time, as when the words settle it, and the client sends the pitch end.
 if (r.pause) {
   // Only once they've pitched the slide (0.39), as for a bare thank-you: a few words in, the model can't tell a finish from a breath
-  if (!(r.pitched_here >= 12 || r.closing_slide)) d.pitch_over = false;
+  if (!r.pitched) d.pitch_over = false;
   const chair = (r.bundle.personas || []).find(p => p.chair) || (r.bundle.personas || [])[0];
   const floor = d.pitch_over === true && chair ? (r.bundle.lines || []).find(l => l.persona_id === chair.id && l.kind === 'open_floor') : null;
   return { reply: { transcript: r.transcript, note: d.pitch_over === true ? 'You wrapped up, so the chair opened the floor.' : 'You paused, and the panel waited for you to go on.',
@@ -1286,12 +1286,15 @@ const LAST = /((that'?s|that is|that was) (all|it|everything|about it)|(i ?'?m|i
 const ON_LAST = /((thank you|thanks)( so much| very much| all| everyone)?|(that'?s|that is|so that'?s|and that'?s) (our|my) (pitch|presentation|project|product|solution|idea))$/;
 const slideCount = (b.slides || []).length;
 const onLast = !slideCount || r.slide_index >= slideCount - 1;
-// A bare thank-you ends the pitch (0.39) only once the presenter has pitched the last slide (about 12 words before it; the pause's
-// audio is the whole slide so far), or when that slide is itself a thank-you or questions slide with nothing to pitch
+// A bare thank-you ends the pitch (0.39) only once the presenter has pitched the last slide: about 8 words before it (the pause's audio
+// is the whole slide so far), or a few words once they've been on the slide 8 s (since the last slide's segment was sent), or when that
+// slide is itself a thank-you or questions slide with nothing to pitch
 const closingSlide = !!slide && /(thank|question|q ?& ?a|contact|get in touch)/i.test(slide.title || '');
 const thanks = onLast ? spoken.slice(-7).join(' ').match(ON_LAST) : null;
 const pitchedHere = spoken.length - (thanks ? thanks[0].split(' ').length : 0);
-const finished = r.pause && (FINISH.test(spoken.slice(-14).join(' ')) || LAST.test(spoken.slice(-7).join(' ')) || (!!thanks && said > 0 && (pitchedHere >= 12 || closingSlide)));
+const onSlide = (r.t || 0) - Math.max(0, ...r.turns.filter(t => t.mode === 'segment' && t.slide_index !== r.slide_index).map(t => t.t || 0));
+const pitched = closingSlide || (said > 0 && (pitchedHere >= 8 || (pitchedHere >= 3 && onSlide >= 8)));
+const finished = r.pause && (FINISH.test(spoken.slice(-14).join(' ')) || LAST.test(spoken.slice(-7).join(' ')) || (!!thanks && said > 0 && pitched));
 // The last slide of a deck gets no question during the pitch (0.35): it waits for the floor
 const lastSlide = r.mode === 'segment' && !r.pause && slideCount > 1 && r.slide_index === slideCount - 1;
 const skip = (r.pause && (finished || !onLast || said < 2)) || lastSlide || (r.mode === 'segment' && !r.pause && (!interrupters.length || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide)));
@@ -1301,7 +1304,7 @@ const skip_note = !skip ? '' : finished ? 'You said you had finished, so the cha
   : !said ? 'Nothing came through on this slide, so the panel just listened.'
   : !interrupters.length ? 'Nobody on this panel interrupts a pitch, so they held their questions.'
   : r.slide_index === 0 && !r.mid_slide ? 'Your opening slide: the panel let you get going.' : 'Only a few words on this slide, so nobody cut in.';
-return { ...r, transcript, prompt, skip, skip_note, finished, pitched_here: said ? pitchedHere : 0, closing_slide: closingSlide };""", [{"room": {"mode": "segment", "transcript": "", "prompt": "", "skip": False, "skip_note": ""}}])
+return { ...r, transcript, prompt, skip, skip_note, finished, pitched };""", [{"room": {"mode": "segment", "transcript": "", "prompt": "", "skip": False, "skip_note": ""}}])
     c += make_node("couldAsk", "ifElse", "n8n-nodes-base.if", 2.3, "Could anyone ask?", {
         "conditions": {
             "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},
