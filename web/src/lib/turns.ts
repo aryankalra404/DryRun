@@ -127,8 +127,12 @@ async function forward(body: TurnRequest, room: ReturnType<typeof getRoom> & { l
 
   // Each voice becomes a path on the laptop: new lines are saved, lines voiced in /prep already have one
   const lines = new Map(room.bundle.lines.map((l) => [l.id, l.audio_url]));
+  // An acknowledgement already said this run isn't said again (0.38): two turns sent at once (an answer and the rest of its slide)
+  // can't see each other's lines in n8n, and both picked the same prep line in the 18 Oct VR run
+  const said = new Set((getRoom().live?.feed ?? feed).flatMap((t) => t.reactions.map((r) => `${r.persona_id} ${r.text}`)));
+  const fresh = (reply.reactions ?? []).filter((r) => r.kind !== "acknowledge" || !said.has(`${r.persona_id} ${r.text}`));
   const reactions: Reaction[] = await Promise.all(
-    (reply.reactions ?? []).map(async ({ audio_base64, ...r }) => {
+    fresh.map(async ({ audio_base64, ...r }) => {
       const url = audio_base64 ? await saveAudio(audio_base64) : r.line_id ? lines.get(r.line_id) : undefined;
       return url ? { ...r, audio_url: url } : r;
     }),

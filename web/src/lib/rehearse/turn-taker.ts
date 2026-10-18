@@ -739,7 +739,10 @@ export class TurnTaker {
     this.inFlight++;
     this.lastActivity = now;
     const sent = { turn, at: now, pause: !!flags.pause };
-    this.deps.send(request, mode === "pitch_end" ? pitchEndTimeoutS : turnTimeoutS).then(
+    const timeoutS = mode === "pitch_end" ? pitchEndTimeoutS : turnTimeoutS;
+    // A pitch end that fails goes once more before the session ends (0.38)
+    const sendOnce = () => this.deps.send(request, timeoutS).catch(() => null);
+    (mode === "pitch_end" ? sendOnce().then((reply) => reply ?? (run === this.run && this.active ? sendOnce() : null)) : sendOnce()).then(
       (reply) => this.receive(run, mode, slide, speechAtSend, reply, sent),
       () => this.receive(run, mode, slide, speechAtSend, null, sent),
     );
