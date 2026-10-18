@@ -6,13 +6,13 @@
 
 An n8n agent that prepares you for your most important meetings, then puts you in a room with the people you're about to meet: in VR or in the browser.
 
+**[▶ Watch Demo Video](https://www.youtube.com/watch?v=PznJSHB2DJ0)** &nbsp;&nbsp;|&nbsp;&nbsp; **[📑 View the pitch deck](https://drive.google.com/file/d/1Et2ReRt8FW2MJp_U0RIgzbMFYAT_YETk/view?usp=sharing)**
+
 ![n8n](https://img.shields.io/badge/n8n-the%20brain-EA4B71?logo=n8n&logoColor=white)
 ![Gemini](https://img.shields.io/badge/Gemini-reasoning-4285F4?logo=googlegemini&logoColor=white)
 ![Sarvam AI](https://img.shields.io/badge/Sarvam%20AI-voices%20%26%20speech-FF6B00)
 ![Meta Quest](https://img.shields.io/badge/Meta%20Quest-VR%20boardroom-0467DF?logo=meta&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-web%20app-000000?logo=nextdotjs&logoColor=white)
-
-**[▶ Watch Demo Video](https://www.youtube.com/watch?v=PznJSHB2DJ0)** &nbsp;&nbsp;|&nbsp;&nbsp; **[📑 View the pitch deck](https://drive.google.com/file/d/1Et2ReRt8FW2MJp_U0RIgzbMFYAT_YETk/view?usp=sharing)**
 
 **HackSprint at MAHE Bengaluru: Track T.02 AI & Automation, PS 22 "Built with n8n"**
 Team **Git Push and Pray**
