@@ -6,7 +6,7 @@
 
 An n8n agent that prepares you for your most important meetings, then puts you in a room with the people you're about to meet: in VR or in the browser.
 
-**[▶ Watch Demo Video](https://www.youtube.com/watch?v=PznJSHB2DJ0)** &nbsp;&nbsp;|&nbsp;&nbsp; **[📑 View the pitch deck](https://drive.google.com/file/d/1Et2ReRt8FW2MJp_U0RIgzbMFYAT_YETk/view?usp=sharing)**
+**[▶ Watch Demo Video](https://www.youtube.com/watch?v=PznJSHB2DJ0)** &nbsp;&nbsp;|&nbsp;&nbsp; **[📑 View the pitch deck](https://drive.google.com/file/d/1Vnxpou6LVkvP5Zwx9AgQ3OnS6Dr16Zvk/view?usp=sharing)**
 
 ![n8n](https://img.shields.io/badge/n8n-the%20brain-EA4B71?logo=n8n&logoColor=white)
 ![Gemini](https://img.shields.io/badge/Gemini-reasoning-4285F4?logo=googlegemini&logoColor=white)
