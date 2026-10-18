@@ -823,8 +823,12 @@ const during = Math.max(0, Math.round((p.plan && p.plan.during_pitch) || 0));
 const interrupters = personas.filter(x => x.manner === 'interrupts').map(x => x.id);
 const maxSlide = Math.max(0, slides.length - 1);
 const seen = new Set();
+// Never on the title or the last slide of a deck (0.35); the model still put one on the last (18 Oct), so it moves to the one before
+// (0.39), where it can still be heard
+const inside = i => slides.length < 3 ? i : Math.max(1, Math.min(maxSlide - 1, i));
 const interrupts = ((p.plan && p.plan.interrupts) || [])
   .filter(x => interrupters.includes(x.persona_id) && Number.isInteger(x.slide_index) && x.slide_index >= 0 && x.slide_index <= maxSlide)
+  .map(x => ({ ...x, slide_index: inside(x.slide_index) }))
   .filter(x => { const k = x.persona_id + ':' + x.slide_index; if (seen.has(k)) return false; seen.add(k); return true; })
   .slice(0, during)
   .map(x => ({ persona_id: x.persona_id, slide_index: x.slide_index, after_s: Math.max(5, Math.min(slides.length ? 120 : pitchSeconds, Math.round(Number(x.after_s) || 15))), about: x.about || '' }));
@@ -837,9 +841,19 @@ const time = g.minutes ? { limit_s: pitchSeconds, nudge_at_s: nudge, cut_at_s: c
 // The chair's time lines only with a limit (time_up only if the chair stops the pitch)
 const chairId = (personas.find(x => x.chair) || {}).id;
 const KINDS = ['welcome', 'open_floor', 'acknowledge', 'time_nudge', 'time_up'];
+// The chair's lines that move to the questions name nobody else on the panel (0.39: 18 Oct VR run, "Rajiv, I'm sure you have thoughts
+// on the numbers", then the chair asked first herself): who asks is decided live. A sentence naming someone is dropped; with too little
+// left, a plain line
+const PLAIN = { open_floor: "Thank you. Let's open it up for questions.", time_up: "Let's stop there and move to questions.", time_nudge: "We're nearly out of time. Could you start wrapping up?" };
+const unnamed = l => {
+  if (!PLAIN[l.kind]) return l.text;
+  const names = personas.filter(x => x.id !== l.persona_id).map(x => String(x.display_name || '').toLowerCase().split(' ')[0]).filter(n => n.length > 1);
+  const kept = (String(l.text).match(/[^.!?]+[.!?]*/g) || []).filter(s => !s.toLowerCase().split(/[^a-z]+/).some(w => names.includes(w))).join('').trim();
+  return kept.split(' ').length >= 4 ? kept : PLAIN[l.kind];
+};
 const lines = (p.lines || []).filter(l => ids.includes(l.persona_id) && l.text && KINDS.includes(l.kind))
   .filter(l => !l.kind.startsWith('time_') || (time && l.persona_id === chairId && (l.kind === 'time_nudge' || cut > 0)))
-  .map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: l.text }));
+  .map((l, i) => ({ id: 'l' + (i + 1), persona_id: l.persona_id, kind: l.kind, text: unnamed(l) }));
 // The chair's way back in for a presenter who froze, one per slide (0.26)
 slides.filter(s => s.question).forEach(s => lines.push({ id: 'l' + (lines.length + 1), persona_id: chairId, kind: 'rescue_question', text: s.question, slide_index: s.index }));
 slides.forEach(s => { delete s.question; });
@@ -968,6 +982,8 @@ if (r.mode === 'opening') reactions = reactions.filter(x => x.kind === 'welcome'
 // A pause on the last slide whose words didn't settle it (0.35): the model only said whether the presenter finished. If so, the chair
 // opens the floor with the line voiced ahead of time, as when the words settle it, and the client sends the pitch end.
 if (r.pause) {
+  // Only once they've pitched the slide (0.39), as for a bare thank-you: a few words in, the model can't tell a finish from a breath
+  if (!(r.pitched_here >= 12 || r.closing_slide)) d.pitch_over = false;
   const chair = (r.bundle.personas || []).find(p => p.chair) || (r.bundle.personas || [])[0];
   const floor = d.pitch_over === true && chair ? (r.bundle.lines || []).find(l => l.persona_id === chair.id && l.kind === 'open_floor') : null;
   return { reply: { transcript: r.transcript, note: d.pitch_over === true ? 'You wrapped up, so the chair opened the floor.' : 'You paused, and the panel waited for you to go on.',
@@ -1094,12 +1110,19 @@ if (pitchOver || reactions.some(x => x.kind === 'question' || x.kind === 'follow
 // After the pitch someone always speaks next: if the model's question was dropped, the next open thread, then an objection nobody
 // has asked (they're written as questions), or, with none left or the plan's questions done, the chair closes
 const followedUp = reactions.some(x => x.kind === 'follow_up');
-if (pitchOver && !waiting && (r.mode === 'answer' || r.mode === 'pitch_end') && !asked && !followedUp && !reactions.some(x => x.kind === 'closing')) {
-  const open = threads.find(t => t.status === 'open' && t !== cur && people[t.persona_id]);
+const nextUp = pitchOver && !waiting && (r.mode === 'answer' || r.mode === 'pitch_end') && !asked && !followedUp;
+const open = threads.find(t => t.status === 'open' && t !== cur && people[t.persona_id]);
+const more = r.asked_after < Math.max(1, (r.bundle.plan || {}).after_pitch || 0);
+// Someone who hasn't asked anything yet goes first, then the hardest (0.39: 18 Oct VR run, Rajiv from Finance never got a word in)
+const spoke = new Set(r.turns.flatMap(t => (t.reactions || []).filter(x => x.kind === 'question').map(x => x.persona_id)));
+const unasked = more ? (r.bundle.personas || []).flatMap(p => (p.objections || []).map(o => ({ p, text: o.text })))
+  .filter(o => o.text.includes('?') && !like(o.text))
+  .sort((a, b) => (spoke.has(a.p.id) ? 1 : 0) - (spoke.has(b.p.id) ? 1 : 0) || (b.p.difficulty || 0) - (a.p.difficulty || 0))[0] : null;
+// The chair doesn't close while the plan's questions are still to come (0.39: the same run closed "given the time" after one question,
+// a minute into a two-minute slot); the open thread or the unasked question is asked instead
+if (nextUp && (open || unasked)) reactions = reactions.filter(x => x.kind !== 'closing');
+if (nextUp && !reactions.some(x => x.kind === 'closing')) {
   const chair = (r.bundle.personas || []).find(p => p.chair) || (r.bundle.personas || [])[0];
-  const more = r.asked_after < Math.max(1, (r.bundle.plan || {}).after_pitch || 0);
-  const unasked = more ? (r.bundle.personas || []).flatMap(p => (p.objections || []).map(o => ({ p, text: o.text })))
-    .filter(o => o.text.includes('?') && !like(o.text)).sort((a, b) => (b.p.difficulty || 0) - (a.p.difficulty || 0))[0] : null;
   if (open) {
     reactions.push({ persona_id: open.persona_id, kind: 'question', text: open.text, line_id: '', raise_hand: false, reason: name(open.persona_id) + ' still had this open from earlier.', thread_id: open.id });
     changed.add(open.id);
@@ -1245,8 +1268,12 @@ const parts = {
 };
 // Each {name} in the prompt filled in by splitting, so nothing in the text is read as a replacement pattern
 const prompt = Object.entries(parts).reduce((t, [k, v]) => t.split('{' + k + '}').join(v), PROMPT);
-// No question is possible on this slide (0.26): "Check the reactions" would drop any, so the model is skipped
-const said = transcript.toLowerCase().split(/[^a-z0-9%]+/).filter(Boolean).length;
+// No question is possible on this slide (0.26): "Check the reactions" would drop any, so the model is skipped. Whisper's stock line for
+// a short or noisy clip ("Thank you.", "Thanks for watching") counts as nothing said (0.39: 18 Oct VR run, 3 s into the last slide in a
+// noisy hall it heard only "Thank you." and the chair opened the floor)
+const NOISE = /^((thank you|thanks)( so much| very much| all| everyone)?( for watching)?|you|bye|okay)$/;
+const heard = transcript.toLowerCase().replace(/[’‘]/g, "'").replace(/[^a-z']+/g, ' ').trim();
+const said = NOISE.test(heard) ? 0 : transcript.toLowerCase().split(/[^a-z0-9%]+/).filter(Boolean).length;
 const interrupters = (b.personas || []).filter(p => p.manner !== 'waits');
 // A pause near the end of the pitch (0.34): did the presenter say they've finished? Checked on their last words, without the model, so
 // the chair can open the floor at once. A pause without a finish is only listened to: the slide's segment carries the words.
@@ -1259,7 +1286,12 @@ const LAST = /((that'?s|that is|that was) (all|it|everything|about it)|(i ?'?m|i
 const ON_LAST = /((thank you|thanks)( so much| very much| all| everyone)?|(that'?s|that is|so that'?s|and that'?s) (our|my) (pitch|presentation|project|product|solution|idea))$/;
 const slideCount = (b.slides || []).length;
 const onLast = !slideCount || r.slide_index >= slideCount - 1;
-const finished = r.pause && (FINISH.test(spoken.slice(-14).join(' ')) || LAST.test(spoken.slice(-7).join(' ')) || (onLast && ON_LAST.test(spoken.slice(-7).join(' '))));
+// A bare thank-you ends the pitch (0.39) only once the presenter has pitched the last slide (about 12 words before it; the pause's
+// audio is the whole slide so far), or when that slide is itself a thank-you or questions slide with nothing to pitch
+const closingSlide = !!slide && /(thank|question|q ?& ?a|contact|get in touch)/i.test(slide.title || '');
+const thanks = onLast ? spoken.slice(-7).join(' ').match(ON_LAST) : null;
+const pitchedHere = spoken.length - (thanks ? thanks[0].split(' ').length : 0);
+const finished = r.pause && (FINISH.test(spoken.slice(-14).join(' ')) || LAST.test(spoken.slice(-7).join(' ')) || (!!thanks && said > 0 && (pitchedHere >= 12 || closingSlide)));
 // The last slide of a deck gets no question during the pitch (0.35): it waits for the floor
 const lastSlide = r.mode === 'segment' && !r.pause && slideCount > 1 && r.slide_index === slideCount - 1;
 const skip = (r.pause && (finished || !onLast || said < 2)) || lastSlide || (r.mode === 'segment' && !r.pause && (!interrupters.length || said < (r.mid_slide ? 12 : 25) || (r.slide_index === 0 && !r.mid_slide)));
@@ -1269,7 +1301,7 @@ const skip_note = !skip ? '' : finished ? 'You said you had finished, so the cha
   : !said ? 'Nothing came through on this slide, so the panel just listened.'
   : !interrupters.length ? 'Nobody on this panel interrupts a pitch, so they held their questions.'
   : r.slide_index === 0 && !r.mid_slide ? 'Your opening slide: the panel let you get going.' : 'Only a few words on this slide, so nobody cut in.';
-return { ...r, transcript, prompt, skip, skip_note, finished };""", [{"room": {"mode": "segment", "transcript": "", "prompt": "", "skip": False, "skip_note": ""}}])
+return { ...r, transcript, prompt, skip, skip_note, finished, pitched_here: said ? pitchedHere : 0, closing_slide: closingSlide };""", [{"room": {"mode": "segment", "transcript": "", "prompt": "", "skip": False, "skip_note": ""}}])
     c += make_node("couldAsk", "ifElse", "n8n-nodes-base.if", 2.3, "Could anyone ask?", {
         "conditions": {
             "options": {"caseSensitive": True, "leftValue": "", "typeValidation": "strict"},

@@ -18,8 +18,9 @@ interface Stored {
 const DIR = path.join(process.cwd(), ".prep-cache");
 const file = (meetingId: string) => path.join(DIR, `${meetingId.replace(/[^\w-]/g, "_")}.json`);
 
-// Bumped when n8n's rehearsal prep plans differently (0.35: more questions during the pitch), so a kept bundle isn't reused across it
-const PREP_LOGIC = "0.35";
+// Bumped when n8n's rehearsal prep plans differently (0.35: more questions during the pitch; 0.39: the chair's hand-over lines name
+// nobody, no interruption on the last slide), so a kept bundle isn't reused across it
+const PREP_LOGIC = "0.39";
 
 // What n8n's prep depends on, hashed. The voices the laptop already has (cached_voices) only save n8n work, so they're left out.
 export async function prepKey(request: PrepRequest, others: string[]): Promise<string> {
