@@ -12,6 +12,7 @@ interface Sample {
   website: string;
   context: string;
   attendees: string;
+  owner_email?: string;
 }
 
 // Add a meeting by hand (most arrive from the calendar). n8n researches it and writes the brief.

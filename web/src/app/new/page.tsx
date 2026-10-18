@@ -10,6 +10,7 @@ const SAMPLE = {
   attendees: "Priya Nair <priya.nair@delhivery.com>, Rajiv Menon <rajiv.menon@delhivery.com>",
   context:
     "Demo of RouteIQ (AI route planning for truck fleets) for their ops and finance team. Priya (VP Operations) set it up; Rajiv from finance wants payback numbers at their fleet size.",
+  owner_email: "kalraaryan13@gmail.com",
 };
 
 // What n8n does with it, in the order its progress shows on the brief
