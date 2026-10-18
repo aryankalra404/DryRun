@@ -20,6 +20,9 @@ GEMINI = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL
 # Groq has no web search, so "Search the web" stays Gemini-only (it already carries on without it).
 GROQ = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "openai/gpt-oss-120b"
+# Live turns only: Groq's free tier counts tokens a minute per model, so when the big model is over its 8,000, the small one has its own
+# (18 Oct: two turns at once used the minute up and the end of the pitch failed, with Gemini's free daily quota gone too)
+GROQ_SPARE_MODEL = "openai/gpt-oss-20b"
 GROQ_WHISPER = "https://api.groq.com/openai/v1/audio/transcriptions"
 WHISPER_MODEL = "whisper-large-v3-turbo"
 APP_URL = "http://localhost:3000"
@@ -927,18 +930,21 @@ return [{ json: { ...b, lines: b.lines.map(l => (audio[l.id] ? { ...l, audio_bas
 # ---------------------------------------------------------------- DryRun turn (/turn)
 
 def groq_first_nodes(var, name, prompt, output, schema, source):
-    """For live turns, where every second shows: Groq first (fast), Gemini on its error output. `prompt` is a JS expression using j."""
+    """For live turns, where every second shows: Groq first (fast), a smaller Groq model on its error output (its own quota), then Gemini.
+    Gemini's error output goes on too (0.38): the rules after it decide alone. `prompt` is a JS expression using j."""
     ask = "(" + prompt + ") + " + json.dumps("\n\nReply with only a JSON object that follows this JSON schema:\n") + " + JSON.stringify(" + js_obj(schema) + ")"
-    body = ("{{ (() => { const j = " + source + "; return JSON.stringify({ model: '" + GROQ_MODEL + "', reasoning_effort: 'low', max_completion_tokens: 4096, "
-            "messages: [{ role: 'user', content: " + ask + " }], response_format: { type: 'json_object' } }); })() }}")
-    groq = make_node(var, "node", "n8n-nodes-base.httpRequest", 4.5, name, {
-        "method": "POST", "url": GROQ, "authentication": "predefinedCredentialType", "nodeCredentialType": "groqApi",
-        "sendBody": True, "specifyBody": "json", "jsonBody": Expr(body), "options": {"timeout": 30000},
-    }, [{"choices": [{"message": {"content": "{}"}}]}], credentials={"groqApi": "Groq"}, extra={"onError": "continueErrorOutput"})
+
+    def groq_call(v, n, model):
+        body = ("{{ (() => { const j = " + source + "; return JSON.stringify({ model: '" + model + "', reasoning_effort: 'low', max_completion_tokens: 4096, "
+                "messages: [{ role: 'user', content: " + ask + " }], response_format: { type: 'json_object' } }); })() }}")
+        return make_node(v, "node", "n8n-nodes-base.httpRequest", 4.5, n, {
+            "method": "POST", "url": GROQ, "authentication": "predefinedCredentialType", "nodeCredentialType": "groqApi",
+            "sendBody": True, "specifyBody": "json", "jsonBody": Expr(body), "options": {"timeout": 30000},
+        }, [{"choices": [{"message": {"content": "{}"}}]}], credentials={"groqApi": "Groq"}, extra={"onError": "continueErrorOutput"})
     gemini = gemini_node(var + "Gemini", name + " (Gemini)", "{{ (() => { const j = " + source + "; return JSON.stringify({ contents: [{ parts: [{ text: " + prompt +
                          " }] }], generationConfig: { responseMimeType: 'application/json', responseSchema: " + js_obj(schema) + " } }); })() }}", GEMINI_REPLY,
-                         extra={"retryOnFail": False})
-    return groq + gemini
+                         extra={"retryOnFail": False, "onError": "continueErrorOutput"})
+    return groq_call(var, name, GROQ_MODEL) + groq_call(var + "Spare", name + " (smaller Groq model)", GROQ_SPARE_MODEL) + gemini
 
 
 # What n8n decided, held to the rules in code (contract 0.26), since a prompt alone didn't stop the panel asking one question five times
@@ -1108,6 +1114,15 @@ if (pitchOver && !waiting && (r.mode === 'answer' || r.mode === 'pitch_end') && 
   }
 }
 
+// A line said already this run isn't said again (18 Oct VR run: "That's a clear explanation." twice in a row): an acknowledgement or a
+// welcome takes another of that person's prep lines of the kind, or goes
+reactions = reactions.flatMap(x => {
+  const l = lines[x.line_id] && lines[x.line_id].persona_id === x.persona_id ? lines[x.line_id] : null;
+  if (!['acknowledge', 'welcome'].includes(x.kind) || !saidBefore.has(l ? l.text : x.text)) return [x];
+  const other = (r.bundle.lines || []).find(y => y.persona_id === x.persona_id && y.kind === x.kind && !saidBefore.has(y.text));
+  return other ? [{ ...x, text: other.text, line_id: other.id }] : [];
+});
+
 reactions = reactions.slice(0, 3).map(x => {
   const line = lines[x.line_id] && lines[x.line_id].persona_id === x.persona_id ? lines[x.line_id] : null;
   const out = { persona_id: x.persona_id, kind: x.kind, text: line ? line.text : x.text, raise_hand: r.mode === 'segment' && x.kind === 'question',
@@ -1117,7 +1132,9 @@ reactions = reactions.slice(0, 3).map(x => {
 // A bundle briefed before voices existed has none: fall back to a voice that fits the avatar
 const voiceOf = p => p.voice || (String(p.avatar).includes('female') ? 'priya' : 'rahul');
 const toVoice = reactions.map((x, i) => ({ i, text: x.text, speaker: voiceOf(people[x.persona_id]), voiced: !!x.line_id })).filter(x => !x.voiced);
-return { reply: { transcript: r.transcript, note: d.note || '', reactions, answer_verdict: verdict, threads: [...changed].map(id => byId[id]),
+// Every model failed (0.38): the rules above decided alone
+const note = d.note || ($json.error ? 'The models were out of quota, so the panel went by its plan.' : '');
+return { reply: { transcript: r.transcript, note, reactions, answer_verdict: verdict, threads: [...changed].map(id => byId[id]),
                   end_session: reactions.some(x => x.kind === 'closing') }, to_voice: toVoice };"""
 
 
@@ -1316,11 +1333,15 @@ return { ...c.reply, reactions };""", [{"reply": {"transcript": "", "reactions":
   .to(anyToVoice
     .onTrue(eachReaction.to(voiceTurn.to(withVoices.to(replyTurn))))
     .onFalse(withVoices))
-  .add(decide.onError(decideGemini))
+  .add(decide.onError(decideSpare))
+  .add(decideSpare)
+  .to(check)
+  .add(decideSpare.onError(decideGemini))
   .add(decideGemini)
   .to(check)
+  .add(decideGemini.onError(check))
   .group('Listen', [readAudio, transcribe], { description: 'Reads the speech and transcribes what the presenter said' })
-  .group('Decide', [context, couldAsk, nobody, decide, decideGemini, check], { description: 'Decides whether anyone reacts, who, what and why, and holds it to the rules; skips the model where no question is possible' })
+  .group('Decide', [context, couldAsk, nobody, decide, decideSpare, decideGemini, check], { description: 'Decides whether anyone reacts, who, what and why, and holds it to the rules; skips the model where no question is possible' })
   .group('Voice', [anyToVoice, eachReaction, voiceTurn, withVoices], { description: 'Voices new lines with Sarvam; lines voiced in prep play as they are' });
 """
     return c
