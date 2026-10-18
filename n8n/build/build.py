@@ -351,7 +351,7 @@ return [{ json: { meeting, emails, count: msgs.length } }];""", [{"meeting": MEE
     c += make_node("website", "node", "n8n-nodes-base.httpRequest", 4.5, "Read their website", {
         "method": "GET",
         "url": Expr("https://{{ $('Summarise the emails').first().json.meeting.company_domain || 'invalid.invalid' }}"),
-      "options": {"timeout": 15000, "redirect": {"redirect": {"followRedirects": False}}, "response": {"response": {"responseFormat": "text"}}},
+        "options": {"timeout": 15000, "redirect": {"redirect": {}}, "response": {"response": {"responseFormat": "text"}}},
     }, [{"data": "<html></html>"}], extra={"onError": "continueRegularOutput"})
     c += code_node("gatherSources", "Gather the sources", """
 // Up to 15 recent headlines (with date, publisher and link) and the readable text of their homepage
